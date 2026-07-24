@@ -1,0 +1,79 @@
+name: Update holidays
+
+# Monthly, refresh holidays.json from data.gov.sg. If it changed (a new year was
+# gazetted, or MOM corrected a date), open a PR for human review — the build also
+# cross-checks against the `holidays` library and surfaces any discrepancy in the
+# PR body. Merging the PR runs the `publish` job, which refreshes the rolling
+# `data` release asset that consumers fetch.
+
+on:
+  schedule:
+    - cron: "0 0 1 * *"  # 1st of each month
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [holidays.json]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    # Only the scheduled/manual runs regenerate + open a PR. The push-to-main run
+    # (from merging that PR) skips straight to publish.
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Rebuild holidays.json
+        id: build
+        run: |
+          # Capture stderr (discrepancy report) so we can put it in the PR body.
+          uv run python build.py 2> report.txt || true
+          cat report.txt
+          {
+            echo 'report<<EOF'
+            cat report.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open PR if changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: update holidays.json from data.gov.sg"
+          title: "Update Singapore public holidays"
+          body: |
+            Auto-generated from data.gov.sg (MOM), the authoritative source.
+
+            Any data.gov.sg vs `holidays`-library discrepancies (gov wins; review):
+
+            ```
+            ${{ steps.build.outputs.report }}
+            ```
+          branch: chore/update-holidays
+          add-paths: holidays.json
+
+  publish:
+    # Runs when holidays.json lands on main (PR merge or direct edit): refresh the
+    # rolling `data` release asset so the stable download URL always serves latest.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish holidays.json to the rolling `data` release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view data >/dev/null 2>&1 \
+            || gh release create data --title "Latest data" \
+                 --notes "Rolling release; holidays.json is refreshed on every change to main."
+          gh release upload data holidays.json --clobber
