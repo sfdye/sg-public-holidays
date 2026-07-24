@@ -56,13 +56,13 @@ def group_by_year(records: list[dict]) -> dict[str, list[str]]:
     return {year: sorted(set(dates)) for year, dates in sorted(result.items())}
 
 
-def cross_check(gov: dict[str, list[str]]) -> list[str]:
+def cross_check(dates_by_year: dict[str, list[str]]) -> list[str]:
     """Compare each gov year against the `holidays` lib; return discrepancy lines.
 
     Gov is authoritative — this only flags for human review, never mutates output.
     """
     lines: list[str] = []
-    for year, gov_dates in gov.items():
+    for year, gov_dates in dates_by_year.items():
         lib_dates = {d.isoformat() for d in holidays.Singapore(years=int(year))}
         gov_set = set(gov_dates)
         only_gov = sorted(gov_set - lib_dates)
@@ -73,11 +73,11 @@ def cross_check(gov: dict[str, list[str]]) -> list[str]:
 
 
 def build() -> tuple[str, dict[str, list[str]], list[str]]:
-    gov = group_by_year(fetch_gov_records())
-    if not gov:
+    dates_by_year = group_by_year(fetch_gov_records())
+    if not dates_by_year:
         raise RuntimeError("no holidays parsed from data.gov.sg")
-    text = json.dumps(gov, indent=2) + "\n"
-    return text, gov, cross_check(gov)
+    text = json.dumps(dates_by_year, indent=2) + "\n"
+    return text, dates_by_year, cross_check(dates_by_year)
 
 
 def main() -> None:
@@ -89,7 +89,7 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    text, gov, discrepancies = build()
+    text, dates_by_year, discrepancies = build()
 
     if args.check:
         current = OUTPUT.read_text() if OUTPUT.exists() else ""
@@ -99,7 +99,7 @@ def main() -> None:
         print("holidays.json is up to date")
     else:
         OUTPUT.write_text(text)
-        years = list(gov)
+        years = list(dates_by_year)
         print(f"Wrote {OUTPUT.name} covering {years[0]}-{years[-1]} ({len(years)} years)")
 
     if discrepancies:
