@@ -1,0 +1,20 @@
+[project]
+name = "sg-public-holidays"
+version = "0.1.0"
+description = "Singapore public holidays, sourced from data.gov.sg (MOM), as JSON"
+requires-python = ">=3.11"
+dependencies = [
+    "holidays==0.95",
+    "requests>=2.32",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+]
+
+[tool.ruff]
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
