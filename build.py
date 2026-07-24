@@ -28,28 +28,21 @@ OUTPUT = Path(__file__).resolve().parent / "holidays.json"
 
 
 def fetch_gov_records() -> list[dict]:
-    """Return every record from the consolidated holidays dataset, paging fully."""
-    records: list[dict] = []
-    offset = 0
-    limit = 100
-    while True:
-        resp = requests.get(
-            SEARCH_URL,
-            params={"resource_id": RESOURCE_ID, "limit": limit, "offset": offset},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-        if not payload.get("success"):
-            raise RuntimeError(f"datastore_search failed: {payload}")
-        result = payload["result"]
-        batch = result.get("records", [])
-        records.extend(batch)
-        total = result.get("total", len(records))
-        offset += len(batch)
-        if not batch or offset >= total:
-            break
-    return records
+    """Return every record from the consolidated holidays dataset.
+
+    The dataset is ~100 rows (a decade of ~11 holidays/year), so a single
+    request with a generous limit fetches everything — no paging needed.
+    """
+    resp = requests.get(
+        SEARCH_URL,
+        params={"resource_id": RESOURCE_ID, "limit": 10000},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    if not payload.get("success"):
+        raise RuntimeError(f"datastore_search failed: {payload}")
+    return payload["result"].get("records", [])
 
 
 def group_by_year(records: list[dict]) -> dict[str, list[str]]:
@@ -79,12 +72,12 @@ def cross_check(gov: dict[str, list[str]]) -> list[str]:
     return lines
 
 
-def build() -> tuple[str, list[str]]:
+def build() -> tuple[str, dict[str, list[str]], list[str]]:
     gov = group_by_year(fetch_gov_records())
     if not gov:
         raise RuntimeError("no holidays parsed from data.gov.sg")
     text = json.dumps(gov, indent=2) + "\n"
-    return text, cross_check(gov)
+    return text, gov, cross_check(gov)
 
 
 def main() -> None:
@@ -96,7 +89,7 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    text, discrepancies = build()
+    text, gov, discrepancies = build()
 
     if args.check:
         current = OUTPUT.read_text() if OUTPUT.exists() else ""
@@ -106,7 +99,7 @@ def main() -> None:
         print("holidays.json is up to date")
     else:
         OUTPUT.write_text(text)
-        years = list(json.loads(text))
+        years = list(gov)
         print(f"Wrote {OUTPUT.name} covering {years[0]}-{years[-1]} ({len(years)} years)")
 
     if discrepancies:
